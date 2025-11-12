@@ -1,0 +1,60 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Build and output directories
+/bin/
+/build/
+/dist/
+
+# Go build artifacts
+*.out
+*.a
+
+# Coverage and testing files
+coverage.out
+*.coverprofile
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.log
+
+# Dependency directories (if you ever use vendoring)
+vendor/
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
+
+# Environment / configuration files
+.env
+.env.local
+.env.*
+*.config
+*.yaml
+*.yml
+*.toml
+*.json
+
+# Temporary files
+tmp/
+*.tmp
+*.bak
+
+# Logs
+logs/
+*.log
+
+# Generated files (e.g. mock data or generated code)
+generated/
+gen/
+
+# Mongo data (if any local dev data dirs)
+data/
