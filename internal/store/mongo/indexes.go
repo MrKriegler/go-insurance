@@ -1,1 +1,91 @@
 package mongo
+
+import (
+	"context"
+	"fmt"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
+	if err := ensureQuotesIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure quotes indexes: %w", err)
+	}
+	if err := ensureApplicationsIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure applications indexes: %w", err)
+	}
+	if err := ensureUnderwritingCasesIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure underwriting_cases indexes: %w", err)
+	}
+	if err := ensureOffersIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure offers indexes: %w", err)
+	}
+	if err := ensurePoliciesIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure policies indexes: %w", err)
+	}
+	return nil
+}
+
+func ensureQuotesIndexes(ctx context.Context, db *mongo.Database) error {
+	// default _id index is automatic, so nothing to do yet
+	return nil
+}
+
+func ensureApplicationsIndexes(ctx context.Context, db *mongo.Database) error {
+	coll := db.Collection(ColApplications)
+	models := []mongo.IndexModel{
+		newIndex("quote_id", 1, "apps_quote_id", false),
+		newIndex("status", 1, "apps_status", false),
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
+}
+
+func ensureUnderwritingCasesIndexes(ctx context.Context, db *mongo.Database) error {
+	coll := db.Collection(ColUnderwriting)
+	models := []mongo.IndexModel{
+		newIndex("application_id", 1, "uwc_application_id_unique", true),
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
+}
+
+func ensureOffersIndexes(ctx context.Context, db *mongo.Database) error {
+	coll := db.Collection(ColOffers)
+	models := []mongo.IndexModel{
+		newIndex("application_id", 1, "offers_application_id_unique", true),
+		newTTLIndex("expiry_at", "offers_expiry_ttl", 0),
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
+}
+
+func ensurePoliciesIndexes(ctx context.Context, db *mongo.Database) error {
+	coll := db.Collection(ColPolicies)
+	models := []mongo.IndexModel{
+		newIndex("number", 1, "policies_number_unique", true),
+		newIndex("application_id", 1, "policies_application_id", false),
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
+}
+
+func newIndex(field string, asc int32, name string, unique bool) mongo.IndexModel {
+	opts := options.Index().SetName(name)
+	if unique {
+		opts = opts.SetUnique(true)
+	}
+	return mongo.IndexModel{
+		Keys:    bson.D{{Key: field, Value: asc}},
+		Options: opts,
+	}
+}
+
+func newTTLIndex(field, name string, expireAfterSeconds int32) mongo.IndexModel {
+	return mongo.IndexModel{
+		Keys:    bson.D{{Key: field, Value: 1}},
+		Options: options.Index().SetName(name).SetExpireAfterSeconds(expireAfterSeconds),
+	}
+}

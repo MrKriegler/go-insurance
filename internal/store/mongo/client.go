@@ -37,6 +37,11 @@ func NewClient(cfg *config.Config) (*MongoClient, error) {
 	return &MongoClient{Client: client, DB: db}, nil
 }
 
+// Ping verifies connectivity (used by /readyz).
+func (c *MongoClient) Ping(ctx context.Context) error {
+	return c.Client.Ping(ctx, nil)
+}
+
 // Close gracefully disconnects from MongoDB.
 func (m *MongoClient) Close(ctx context.Context) error {
 	return m.Client.Disconnect(ctx)
