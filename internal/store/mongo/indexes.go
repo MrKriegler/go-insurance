@@ -32,8 +32,14 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 }
 
 func ensureQuotesIndexes(ctx context.Context, db *mongo.Database) error {
-	// default _id index is automatic, so nothing to do yet
-	return nil
+	coll := db.Collection(ColQuotes)
+	models := []mongo.IndexModel{
+		newIndex("product_slug", 1, "quotes_product_slug", false),
+		newIndex("created_at", 1, "quotes_created_at", false),
+		newTTLIndex("expires_at", "quotes_expiry_ttl", 0), // optional: enable later if you want TTL
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
 }
 
 func ensureProductsIndexes(ctx context.Context, db *mongo.Database) error {

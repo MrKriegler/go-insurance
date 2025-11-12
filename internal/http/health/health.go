@@ -23,7 +23,7 @@ func New(log *slog.Logger, p Pinger, opTimeout time.Duration) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	// Readiness: critical dependencies are reachable (e.g., DB)
+	// Readiness: dependencies are reachable
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), opTimeout)
 		defer cancel()

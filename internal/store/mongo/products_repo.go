@@ -26,11 +26,11 @@ func NewProductRepo(db *mongodrv.Database, opTimeout time.Duration) *ProductRepo
 }
 
 // Lists all products. returns an empty slice if none found.
-func (r *ProductRepoMongo) List(ctx context.Context) ([]core.Product, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+func (repo *ProductRepoMongo) List(ctx context.Context) ([]core.Product, error) {
+	ctx, cancel := context.WithTimeout(ctx, repo.opTimeout)
 	defer cancel()
 
-	cur, err := r.coll.Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
+	cur, err := repo.coll.Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
 	if err != nil {
 		return nil, fmt.Errorf("products.find: %w", err)
 	}
@@ -52,11 +52,11 @@ func (r *ProductRepoMongo) List(ctx context.Context) ([]core.Product, error) {
 }
 
 // Gets a product by Slug. Returns core.ErrNotFound if not found.
-func (r *ProductRepoMongo) GetBySlug(ctx context.Context, slug string) (core.Product, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+func (repo *ProductRepoMongo) GetBySlug(ctx context.Context, slug string) (core.Product, error) {
+	ctx, cancel := context.WithTimeout(ctx, repo.opTimeout)
 	defer cancel()
 	var doc ProductDoc
-	err := r.coll.FindOne(ctx, bson.M{"slug": slug}).Decode(&doc)
+	err := repo.coll.FindOne(ctx, bson.M{"slug": slug}).Decode(&doc)
 	if err != nil {
 		if errors.Is(err, mongodrv.ErrNoDocuments) {
 			return core.Product{}, core.ErrNotFound
@@ -67,12 +67,12 @@ func (r *ProductRepoMongo) GetBySlug(ctx context.Context, slug string) (core.Pro
 }
 
 // Gets a product by ID. Returns core.ErrNotFound if not found.
-func (r *ProductRepoMongo) GetByID(ctx context.Context, id string) (core.Product, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+func (repo *ProductRepoMongo) GetByID(ctx context.Context, id string) (core.Product, error) {
+	ctx, cancel := context.WithTimeout(ctx, repo.opTimeout)
 	defer cancel()
 
 	var product ProductDoc
-	err := r.coll.FindOne(ctx, bson.M{"_id": id}).Decode(&product)
+	err := repo.coll.FindOne(ctx, bson.M{"_id": id}).Decode(&product)
 	if err != nil {
 		if errors.Is(err, mongodrv.ErrNoDocuments) {
 			return core.Product{}, core.ErrNotFound
@@ -83,8 +83,8 @@ func (r *ProductRepoMongo) GetByID(ctx context.Context, id string) (core.Product
 }
 
 // Upserts a product by Slug. If no existing product with the given Slug exists, a new one is created.
-func (r *ProductRepoMongo) UpsertBySlug(ctx context.Context, p core.Product) error {
-	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+func (repo *ProductRepoMongo) UpsertBySlug(ctx context.Context, p core.Product) error {
+	ctx, cancel := context.WithTimeout(ctx, repo.opTimeout)
 	defer cancel()
 
 	// Ensure we never overwrite the _id unless inserting
@@ -101,7 +101,7 @@ func (r *ProductRepoMongo) UpsertBySlug(ctx context.Context, p core.Product) err
 		setOnInsert["_id"] = ids.New()
 	}
 
-	_, err := r.coll.UpdateOne(
+	_, err := repo.coll.UpdateOne(
 		ctx,
 		bson.M{"slug": p.Slug}, // match by slug
 		bson.M{"$set": set, "$setOnInsert": setOnInsert},

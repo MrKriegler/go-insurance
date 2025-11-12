@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/MrKriegler/go-insurance/internal/core"
 	transporthttp "github.com/MrKriegler/go-insurance/internal/http"
 	healthhttp "github.com/MrKriegler/go-insurance/internal/http/health"
 
@@ -35,29 +36,31 @@ func main() {
 
 	// --- Mongo ---
 	log.Info("connecting mongo", "uri", cfg.MongoURI, "db", cfg.MongoDB)
-	mc, err := mongo.NewClient(cfg)
+	mongoClient, err := mongo.NewClient(cfg)
 	if err != nil {
 		log.Error("mongo connect failed", "err", err)
 		os.Exit(1)
 	}
-	defer mc.Close(context.Background())
+	defer mongoClient.Close(context.Background())
 
 	// Ensure indexes
 	{
 		ctx, cancel := context.WithTimeout(rootCtx, 15*time.Second)
 		defer cancel()
-		if err := mongo.EnsureIndexes(ctx, mc.DB); err != nil {
+		if err := mongo.EnsureIndexes(ctx, mongoClient.DB); err != nil {
 			log.Error("ensure indexes failed", "err", err)
 			os.Exit(1)
 		}
 	}
 
 	// --- Build deps for handlers ---
-	productRepo := mongo.NewProductRepo(mc.DB, time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond)
+	productRepo := mongo.NewProductRepo(mongoClient.DB, time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond)
+	quoteRepo := mongo.NewQuoteRepo(mongoClient.DB, time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond)
+	quoteService := core.NewQuoteService(productRepo, quoteRepo)
 
 	productsH := handlers.NewProductHandler(productRepo, log)
-	quotesH := handlers.NewQuoteHandler()     // keep simple for now
-	appsH := handlers.NewApplicationHandler() // keep simple for now
+	quotesH := handlers.NewQuoteHandler(quoteService, quoteRepo, log)
+	appsH := handlers.NewApplicationHandler()
 	uwH := handlers.NewUWHandler()
 	offersH := handlers.NewOfferHandler()
 	policiesH := handlers.NewPolicyHandler()
@@ -69,7 +72,7 @@ func main() {
 
 	r.Mount("/", healthhttp.New(
 		log,
-		mc, // your mongo client implements Ping(ctx) error
+		mongoClient, // your mongo client implements Ping(ctx) error
 		time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond,
 	))
 

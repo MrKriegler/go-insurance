@@ -1,6 +1,10 @@
 package mongo
 
-import "github.com/MrKriegler/go-insurance/internal/core"
+import (
+	"time"
+
+	"github.com/MrKriegler/go-insurance/internal/core"
+)
 
 const (
 	ColProducts     = "products"
@@ -43,5 +47,46 @@ func toProductDoc(p core.Product) ProductDoc {
 		MinCoverage: p.MinCoverage,
 		MaxCoverage: p.MaxCoverage,
 		BaseRate:    p.BaseRate,
+	}
+}
+
+// Quote
+type QuoteDoc struct {
+	ID             string    `bson:"_id"`
+	ProductID      string    `bson:"product_id"`
+	ProductSlug    string    `bson:"product_slug"`
+	CoverageAmount int64     `bson:"coverage_amount"`
+	TermYears      int       `bson:"term_years"`
+	MonthlyPremium float64   `bson:"monthly_premium"`
+	Status         string    `bson:"status"`
+	CreatedAt      time.Time `bson:"created_at"`
+	ExpiresAt      time.Time `bson:"expires_at"`
+}
+
+func fromQuoteDoc(d QuoteDoc) core.Quote {
+	return core.Quote{
+		ID:             d.ID,
+		ProductID:      d.ProductID,
+		ProductSlug:    d.ProductSlug,
+		CoverageAmount: d.CoverageAmount,
+		TermYears:      d.TermYears,
+		MonthlyPremium: d.MonthlyPremium,
+		Status:         core.QuoteStatus(d.Status),
+		CreatedAt:      d.CreatedAt,
+		ExpiresAt:      d.ExpiresAt,
+	}
+}
+
+func toQuoteDoc(q core.Quote) QuoteDoc {
+	return QuoteDoc{
+		ID:             q.ID,
+		ProductID:      q.ProductID,
+		ProductSlug:    q.ProductSlug,
+		CoverageAmount: q.CoverageAmount,
+		TermYears:      q.TermYears,
+		MonthlyPremium: q.MonthlyPremium,
+		Status:         string(q.Status),
+		CreatedAt:      q.CreatedAt,
+		ExpiresAt:      q.ExpiresAt,
 	}
 }
