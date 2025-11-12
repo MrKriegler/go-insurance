@@ -1,3 +1,4 @@
+// cmd/api/main.go
 package main
 
 import (
@@ -13,6 +14,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	transporthttp "github.com/MrKriegler/go-insurance/internal/http"
+	healthhttp "github.com/MrKriegler/go-insurance/internal/http/health"
+
 	"github.com/MrKriegler/go-insurance/internal/http/handlers"
 	"github.com/MrKriegler/go-insurance/internal/platform/config"
 	"github.com/MrKriegler/go-insurance/internal/platform/logging"
@@ -20,78 +23,66 @@ import (
 )
 
 func main() {
-	// ---- Config & Logger ----
+	// --- Config & Logger ---
 	cfg := config.MustLoad()
 	log := logging.New(cfg.Env)
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Info("Starting server on %s in %s mode", addr, cfg.Env)
+	log.Info("starting server", "addr", addr, "env", cfg.Env)
 
-	// Root context with cancel on SIGINT/SIGTERM for graceful shutdown
+	// Root ctx with SIGINT/SIGTERM
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// ---- Mongo ----
-	log.Info("Connecting to MongoDB at %s / DB: %s", cfg.MongoURI, cfg.MongoDB)
-	mc, err := mongo.NewClient(cfg) // must return a struct with fields {Client *mongo.Client; DB *mongo.Database}
+	// --- Mongo ---
+	log.Info("connecting mongo", "uri", cfg.MongoURI, "db", cfg.MongoDB)
+	mc, err := mongo.NewClient(cfg)
 	if err != nil {
-		log.Error("Failed to connect to MongoDB: %v", err)
+		log.Error("mongo connect failed", "err", err)
 		os.Exit(1)
 	}
 	defer mc.Close(context.Background())
-	log.Info("Connected to MongoDB")
 
-	// Ensure indexes (idempotent)
+	// Ensure indexes
 	{
 		ctx, cancel := context.WithTimeout(rootCtx, 15*time.Second)
 		defer cancel()
 		if err := mongo.EnsureIndexes(ctx, mc.DB); err != nil {
-			log.Error("ensure indexes: %v", err)
+			log.Error("ensure indexes failed", "err", err)
 			os.Exit(1)
 		}
 	}
 
-	// ---- Build empty handlers (no services yet) ----
-	productsH := handlers.NewProductHandler()
-	quotesH := handlers.NewQuoteHandler()
-	appsH := handlers.NewApplicationHandler()
+	// --- Build deps for handlers ---
+	productRepo := mongo.NewProductRepo(mc.DB, time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond)
+
+	productsH := handlers.NewProductHandler(productRepo, log)
+	quotesH := handlers.NewQuoteHandler()     // keep simple for now
+	appsH := handlers.NewApplicationHandler() // keep simple for now
 	uwH := handlers.NewUWHandler()
 	offersH := handlers.NewOfferHandler()
 	policiesH := handlers.NewPolicyHandler()
 
-	// ---- Outer router (health, readiness, then mount API) ----
+	// --- Outer router: health + /api/v1 mount ---
 	r := chi.NewRouter()
-	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
+	r.Use(chimw.RequestID, chimw.RealIP, chimw.Logger, chimw.Recoverer)
 	r.Use(chimw.Timeout(time.Duration(cfg.HTTPRequestTimeoutSec) * time.Second))
 
-	// Liveness probe: process up
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	r.Mount("/", healthhttp.New(
+		log,
+		mc, // your mongo client implements Ping(ctx) error
+		time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond,
+	))
 
-	// Readiness probe: DB reachable within a tight SLA
-	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		ctx, cancel := context.WithTimeout(rootCtx, time.Duration(cfg.MongoOpTimeoutMs)*time.Millisecond)
-		defer cancel()
-		if err := mc.Ping(ctx); err != nil {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ready"))
-	})
-
-	apiRouter := transporthttp.NewRouter(transporthttp.Deps{
+	// Build API subrouter (adds JSON content-type inside)
+	api := transporthttp.NewRouter(transporthttp.Deps{
 		Mounts: []handlers.Mountable{
 			productsH, quotesH, appsH, uwH, offersH, policiesH,
 		},
 	})
-	r.Mount("/api/v1", apiRouter)
 
-	// ---- HTTP Server ----
+	r.Mount("/api/v1", api)
+
+	// --- HTTP Server ---
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
@@ -103,20 +94,20 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("Server started and listening on %s", addr)
+		log.Info("listening", "addr", addr)
 		errCh <- srv.ListenAndServe()
 	}()
 
-	// ---- Wait for shutdown or error ----
+	// --- Shutdown / Exit ---
 	select {
 	case <-rootCtx.Done():
 		shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shCtx)
-		log.Info("Shut down cleanly")
+		log.Info("shutdown complete")
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {
-			log.Error("Server failed: %v", err)
+			log.Error("server error", "err", err)
 			os.Exit(1)
 		}
 	}

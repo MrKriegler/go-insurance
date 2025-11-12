@@ -13,6 +13,9 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 	if err := ensureQuotesIndexes(ctx, db); err != nil {
 		return fmt.Errorf("ensure quotes indexes: %w", err)
 	}
+	if err := ensureProductsIndexes(ctx, db); err != nil {
+		return fmt.Errorf("ensure products indexes: %w", err)
+	}
 	if err := ensureApplicationsIndexes(ctx, db); err != nil {
 		return fmt.Errorf("ensure applications indexes: %w", err)
 	}
@@ -31,6 +34,20 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 func ensureQuotesIndexes(ctx context.Context, db *mongo.Database) error {
 	// default _id index is automatic, so nothing to do yet
 	return nil
+}
+
+func ensureProductsIndexes(ctx context.Context, db *mongo.Database) error {
+	coll := db.Collection(ColProducts)
+	models := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "slug", Value: 1}},
+			Options: options.Index().SetName("products_slug_unique").SetUnique(true),
+		},
+		{Keys: bson.D{{Key: "term_years", Value: 1}},
+			Options: options.Index().SetName("products_term_years_asc"),
+		},
+	}
+	_, err := coll.Indexes().CreateMany(ctx, models)
+	return err
 }
 
 func ensureApplicationsIndexes(ctx context.Context, db *mongo.Database) error {
