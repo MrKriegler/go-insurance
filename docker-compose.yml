@@ -1,0 +1,40 @@
+# docker-compose.yml
+# Use: docker compose up -d dynamodb   (for DynamoDB)
+# Or:  docker compose up -d mongo      (for MongoDB)
+
+services:
+  # DynamoDB Local (default for AWS deployment)
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: go-insurance-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:8000 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # MongoDB (alternative)
+  mongo:
+    image: mongo:7.0
+    container_name: go-insurance-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: go_insurance_user
+      MONGO_INITDB_ROOT_PASSWORD: go_insurance_pass
+      MONGO_INITDB_DATABASE: go_insurance_db
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mongo_data:

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,7 +32,7 @@ func (s *quoteService) Price(ctx context.Context, in QuoteInput) (Quote, error) 
 	// 2) load product by slug
 	p, err := s.products.GetBySlug(ctx, in.ProductSlug)
 	if err != nil {
-		if err == ErrNotFound {
+		if errors.Is(err, ErrNotFound) {
 			return Quote{}, fmt.Errorf("%w: product %q", ErrNotFound, in.ProductSlug)
 		}
 		return Quote{}, err

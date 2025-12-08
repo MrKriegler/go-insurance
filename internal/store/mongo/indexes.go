@@ -79,7 +79,8 @@ func ensureOffersIndexes(ctx context.Context, db *mongo.Database) error {
 	coll := db.Collection(ColOffers)
 	models := []mongo.IndexModel{
 		newIndex("application_id", 1, "offers_application_id_unique", true),
-		newTTLIndex("expiry_at", "offers_expiry_ttl", 0),
+		newIndex("status", 1, "offers_status", false),
+		newTTLIndex("expires_at", "offers_expiry_ttl", 0),
 	}
 	_, err := coll.Indexes().CreateMany(ctx, models)
 	return err

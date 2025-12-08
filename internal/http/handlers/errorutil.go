@@ -14,15 +14,19 @@ func writeError(ctx context.Context, log *slog.Logger, w http.ResponseWriter, er
 	switch {
 	case errors.Is(err, core.ErrNotFound):
 		log.WarnContext(ctx, "resource not found", "err", err)
-		problem.Write(w, http.StatusNotFound, "Not Found", detail)
+		problem.Write(w, http.StatusNotFound, "Not Found", err.Error())
 
 	case errors.Is(err, core.ErrValidation):
 		log.WarnContext(ctx, "validation failed", "err", err)
-		problem.Write(w, http.StatusBadRequest, "Validation Error", detail)
+		problem.Write(w, http.StatusBadRequest, "Validation Error", err.Error())
 
 	case errors.Is(err, core.ErrConflict):
 		log.WarnContext(ctx, "resource conflict", "err", err)
-		problem.Write(w, http.StatusConflict, "Conflict", detail)
+		problem.Write(w, http.StatusConflict, "Conflict", err.Error())
+
+	case errors.Is(err, core.ErrInvalidState):
+		log.WarnContext(ctx, "invalid state transition", "err", err)
+		problem.Write(w, http.StatusConflict, "Invalid State", err.Error())
 
 	case errors.Is(err, core.ErrUnauthorized):
 		log.WarnContext(ctx, "unauthorized request", "err", err)

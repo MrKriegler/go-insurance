@@ -24,15 +24,15 @@ type QuoteInput struct {
 }
 
 type Quote struct {
-	ID             string
-	ProductID      string
-	ProductSlug    string
-	CoverageAmount int64
-	TermYears      int
-	MonthlyPremium float64
-	Status         QuoteStatus
-	CreatedAt      time.Time
-	ExpiresAt      time.Time
+	ID             string      `json:"id"`
+	ProductID      string      `json:"product_id"`
+	ProductSlug    string      `json:"product_slug"`
+	CoverageAmount int64       `json:"coverage_amount"`
+	TermYears      int         `json:"term_years"`
+	MonthlyPremium float64     `json:"monthly_premium"`
+	Status         QuoteStatus `json:"status"`
+	CreatedAt      time.Time   `json:"created_at"`
+	ExpiresAt      time.Time   `json:"expires_at"`
 }
 
 type QuoteRepo interface {
@@ -62,5 +62,5 @@ func (in QuoteInput) Validate() error {
 }
 
 var (
-	ErrQuoteNotFound = fmt.Errorf("%v: quote not found", ErrNotFound)
+	ErrQuoteNotFound = fmt.Errorf("%w: quote not found", ErrNotFound)
 )

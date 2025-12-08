@@ -1,0 +1,219 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  # ===== INFRASTRUCTURE DEPLOYMENT =====
+  deploy-infra:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      s3-bucket: ${{ steps.outputs.outputs.s3-bucket }}
+      cloudfront-id: ${{ steps.outputs.outputs.cloudfront-id }}
+      ecr-repo: ${{ steps.outputs.outputs.ecr-repo }}
+      app-runner-arn: ${{ steps.outputs.outputs.app-runner-arn }}
+      api-url: ${{ steps.outputs.outputs.api-url }}
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-go-insurance
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK Deploy
+        run: npx cdk deploy --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Extract CDK outputs
+        id: outputs
+        run: |
+          S3_BUCKET=$(jq -r '.GoInsurance.WebBucketName // empty' cdk-outputs.json)
+          echo "s3-bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+
+          CF_ID=$(jq -r '.GoInsurance.DistributionId // empty' cdk-outputs.json)
+          echo "cloudfront-id=$CF_ID" >> $GITHUB_OUTPUT
+
+          ECR_REPO=$(jq -r '.GoInsurance.EcrRepoUri // empty' cdk-outputs.json)
+          echo "ecr-repo=$ECR_REPO" >> $GITHUB_OUTPUT
+
+          APP_RUNNER_ARN=$(jq -r '.GoInsurance.ApiServiceArn // empty' cdk-outputs.json)
+          echo "app-runner-arn=$APP_RUNNER_ARN" >> $GITHUB_OUTPUT
+
+          API_URL=$(jq -r '.GoInsurance.ApiUrl // empty' cdk-outputs.json)
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+
+  # ===== API DEPLOYMENT =====
+  deploy-api:
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-go-insurance
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get stack outputs
+        id: stack
+        run: |
+          ECR_REPO=$(aws cloudformation describe-stacks --stack-name GoInsurance \
+            --query "Stacks[0].Outputs[?OutputKey=='EcrRepoUri'].OutputValue" --output text)
+          echo "ecr-repo=$ECR_REPO" >> $GITHUB_OUTPUT
+
+          APP_RUNNER_ARN=$(aws cloudformation describe-stacks --stack-name GoInsurance \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiServiceArn'].OutputValue" --output text)
+          echo "app-runner-arn=$APP_RUNNER_ARN" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.stack.outputs.ecr-repo }}:${{ github.sha }}
+            ${{ steps.stack.outputs.ecr-repo }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to App Runner
+        run: |
+          aws apprunner start-deployment \
+            --service-arn "${{ steps.stack.outputs.app-runner-arn }}"
+
+      - name: Wait for App Runner deployment
+        run: |
+          echo "Waiting for App Runner deployment to complete..."
+          for i in {1..30}; do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "${{ steps.stack.outputs.app-runner-arn }}" \
+              --query 'Service.Status' --output text)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then
+              echo "Deployment complete!"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timeout waiting for deployment"
+          exit 1
+
+  # ===== WEB DEPLOYMENT =====
+  deploy-web:
+    needs: [deploy-infra, deploy-api]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://${{ needs.deploy-infra.outputs.api-url }}/api/v1
+          NEXT_PUBLIC_API_KEY: ${{ secrets.API_KEY }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-go-insurance
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get stack outputs
+        id: stack
+        run: |
+          S3_BUCKET=$(aws cloudformation describe-stacks --stack-name GoInsurance \
+            --query "Stacks[0].Outputs[?OutputKey=='WebBucketName'].OutputValue" --output text)
+          echo "s3-bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+
+          CF_ID=$(aws cloudformation describe-stacks --stack-name GoInsurance \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" --output text)
+          echo "cloudfront-id=$CF_ID" >> $GITHUB_OUTPUT
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync out s3://${{ steps.stack.outputs.s3-bucket }} \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html" \
+            --exclude "*.json"
+
+          aws s3 sync out s3://${{ steps.stack.outputs.s3-bucket }} \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --exclude "*" \
+            --include "index.html" \
+            --include "*.json"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.stack.outputs.cloudfront-id }}" \
+            --paths "/index.html" "/_next/*"
+
+  # ===== SUMMARY =====
+  summary:
+    needs: [deploy-infra, deploy-api, deploy-web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure | ${{ needs.deploy-infra.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API | ${{ needs.deploy-api.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web | ${{ needs.deploy-web.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

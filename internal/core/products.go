@@ -6,13 +6,13 @@ import (
 )
 
 type Product struct {
-	ID          string
-	Slug        string
-	Name        string
-	TermYears   int
-	MinCoverage int64
-	MaxCoverage int64
-	BaseRate    float64 // Base monthly rate per 1,000 units of coverage
+	ID          string  `json:"id"`
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	TermYears   int     `json:"term_years"`
+	MinCoverage int64   `json:"min_coverage"`
+	MaxCoverage int64   `json:"max_coverage"`
+	BaseRate    float64 `json:"base_rate"` // Base monthly rate per 1,000 units of coverage
 }
 
 type ProductRepo interface {
