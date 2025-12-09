@@ -133,6 +133,100 @@ jobs:
           echo "Timeout waiting for deployment"
           exit 1
 
+      - name: Setup App Runner custom domain
+        run: |
+          DOMAIN="api.insurance.labs.iron-pig.com"
+          HOSTED_ZONE_NAME="labs.iron-pig.com"
+          SERVICE_ARN="${{ steps.stack.outputs.app-runner-arn }}"
+
+          # Get hosted zone ID
+          HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+            --dns-name "$HOSTED_ZONE_NAME" \
+            --query "HostedZones[?Name=='${HOSTED_ZONE_NAME}.'].Id" \
+            --output text | sed 's|/hostedzone/||')
+
+          echo "Hosted Zone ID: $HOSTED_ZONE_ID"
+
+          # Check if custom domain is already associated
+          EXISTING=$(aws apprunner describe-custom-domains \
+            --service-arn "$SERVICE_ARN" \
+            --query "CustomDomains[?DomainName=='$DOMAIN'].DomainName" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$EXISTING" ]; then
+            echo "Associating custom domain $DOMAIN..."
+            aws apprunner associate-custom-domain \
+              --service-arn "$SERVICE_ARN" \
+              --domain-name "$DOMAIN" \
+              --enable-www-subdomain-association false
+
+            echo "Waiting for custom domain details..."
+            sleep 10
+          else
+            echo "Custom domain $DOMAIN is already associated"
+          fi
+
+          # Get the custom domain details (target and validation records)
+          CUSTOM_DOMAIN_JSON=$(aws apprunner describe-custom-domains \
+            --service-arn "$SERVICE_ARN" \
+            --query "CustomDomains[?DomainName=='$DOMAIN']" \
+            --output json)
+
+          echo "Custom domain details: $CUSTOM_DOMAIN_JSON"
+
+          # Extract the target (App Runner DNS target)
+          TARGET=$(echo "$CUSTOM_DOMAIN_JSON" | jq -r '.[0].Target // empty')
+
+          if [ -n "$TARGET" ]; then
+            echo "Creating/updating CNAME record for $DOMAIN -> $TARGET"
+
+            # Create the main CNAME record
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$HOSTED_ZONE_ID" \
+              --change-batch '{
+                "Changes": [{
+                  "Action": "UPSERT",
+                  "ResourceRecordSet": {
+                    "Name": "'"$DOMAIN"'",
+                    "Type": "CNAME",
+                    "TTL": 300,
+                    "ResourceRecords": [{"Value": "'"$TARGET"'"}]
+                  }
+                }]
+              }'
+
+            # Create validation CNAME records
+            CERT_RECORDS=$(echo "$CUSTOM_DOMAIN_JSON" | jq -r '.[0].CertificateValidationRecords // []')
+            for row in $(echo "$CERT_RECORDS" | jq -r '.[] | @base64'); do
+              _jq() {
+                echo ${row} | base64 --decode | jq -r ${1}
+              }
+              CERT_NAME=$(_jq '.Name')
+              CERT_VALUE=$(_jq '.Value')
+
+              if [ -n "$CERT_NAME" ] && [ -n "$CERT_VALUE" ]; then
+                echo "Creating validation record: $CERT_NAME -> $CERT_VALUE"
+                aws route53 change-resource-record-sets \
+                  --hosted-zone-id "$HOSTED_ZONE_ID" \
+                  --change-batch '{
+                    "Changes": [{
+                      "Action": "UPSERT",
+                      "ResourceRecordSet": {
+                        "Name": "'"$CERT_NAME"'",
+                        "Type": "CNAME",
+                        "TTL": 300,
+                        "ResourceRecords": [{"Value": "'"$CERT_VALUE"'"}]
+                      }
+                    }]
+                  }'
+              fi
+            done
+
+            echo "DNS records created. Custom domain may take a few minutes to become active."
+          else
+            echo "Warning: Could not get App Runner target. Custom domain may need manual setup."
+          fi
+
   # ===== WEB DEPLOYMENT =====
   deploy-web:
     needs: [deploy-infra, deploy-api]
@@ -160,7 +254,7 @@ jobs:
       - name: Build frontend
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://${{ needs.deploy-infra.outputs.api-url }}/api/v1
+          NEXT_PUBLIC_API_URL: https://api.insurance.labs.iron-pig.com/api/v1
           NEXT_PUBLIC_API_KEY: ${{ secrets.API_KEY }}
 
       - name: Configure AWS credentials
@@ -215,5 +309,9 @@ jobs:
           echo "| Infrastructure | ${{ needs.deploy-infra.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| API | ${{ needs.deploy-api.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Web | ${{ needs.deploy-web.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** https://insurance.labs.iron-pig.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **API:** https://api.insurance.labs.iron-pig.com" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

@@ -193,15 +193,34 @@ curl -X POST http://localhost:8080/api/v1/offers/YOUR_OFFER_ID:accept
 curl http://localhost:8080/api/v1/policies
 ```
 
+## Production URLs
+
+- **Frontend:** https://insurance.labs.iron-pig.com
+- **API:** https://api.insurance.labs.iron-pig.com/api/v1
+- **Swagger Docs:** https://api.insurance.labs.iron-pig.com/swagger/
+
 ## AWS Deployment
 
-For production DynamoDB:
+The infrastructure is deployed via AWS CDK and GitHub Actions.
 
-1. Set `DYNAMODB_ENDPOINT` to empty (uses AWS)
-2. Configure proper IAM credentials
-3. Tables are created automatically on first run
+### Custom Domains
 
-DynamoDB tables created:
+- **Frontend:** `insurance.labs.iron-pig.com` (CloudFront + S3)
+- **API:** `api.insurance.labs.iron-pig.com` (App Runner)
+- **DNS:** Route 53 hosted zone `labs.iron-pig.com`
+
+### Infrastructure Components
+
+- **App Runner** - Hosts the Go API container
+- **DynamoDB** - NoSQL database (tables auto-created)
+- **S3 + CloudFront** - Frontend static hosting with CDN
+- **ECR** - Docker image registry
+- **ACM** - SSL certificates (auto-validated via DNS)
+- **Secrets Manager** - API key storage
+
+### DynamoDB Tables
+
+Tables are created automatically on first run:
 - `insurance_products`
 - `insurance_quotes`
 - `insurance_applications`
