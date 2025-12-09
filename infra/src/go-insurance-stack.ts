@@ -115,6 +115,16 @@ function handler(event) {
       functionName: `${PROJECT_NAME}-url-rewrite`,
     });
 
+    // Create separate behavior for static assets that should NOT fall back to HTML
+    // This prevents JS/CSS 404s from returning HTML (which causes "Unexpected token '<'" errors)
+    const staticAssetsBehavior: cloudfront.BehaviorOptions = {
+      origin: origins.S3BucketOrigin.withOriginAccessControl(websiteBucket),
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      // No function association - static assets don't need URL rewriting
+    };
+
     const distribution = new cloudfront.Distribution(this, "Distribution", {
       comment: `${PROJECT_NAME} frontend`,
       domainNames: [FRONTEND_DOMAIN],
@@ -131,10 +141,16 @@ function handler(event) {
           },
         ],
       },
+      additionalBehaviors: {
+        // Static assets should NOT fall back to error pages
+        // If they're missing, return a proper 404 so the browser knows
+        "/_next/static/*": staticAssetsBehavior,
+      },
       defaultRootObject: "index.html",
+      // Only apply SPA fallback for navigation requests (not static assets)
+      // 403 from S3 means object doesn't exist (OAC) - redirect to index for SPA routing
       errorResponses: [
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/404.html", ttl: cdk.Duration.minutes(5) },
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html", ttl: cdk.Duration.minutes(5) },
+        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html", ttl: cdk.Duration.seconds(0) },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
