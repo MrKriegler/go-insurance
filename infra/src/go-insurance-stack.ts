@@ -92,6 +92,29 @@ export class GoInsuranceStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
     });
 
+    // CloudFront Function to handle directory index files
+    // This rewrites /path/ to /path/index.html for static hosting
+    const urlRewriteFunction = new cloudfront.Function(this, "UrlRewriteFunction", {
+      code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  // If URI ends with '/', append index.html
+  if (uri.endsWith('/')) {
+    request.uri += 'index.html';
+  }
+  // If URI doesn't have an extension, append /index.html
+  else if (!uri.includes('.')) {
+    request.uri += '/index.html';
+  }
+
+  return request;
+}
+      `),
+      functionName: `${PROJECT_NAME}-url-rewrite`,
+    });
+
     const distribution = new cloudfront.Distribution(this, "Distribution", {
       comment: `${PROJECT_NAME} frontend`,
       domainNames: [FRONTEND_DOMAIN],
@@ -101,10 +124,16 @@ export class GoInsuranceStack extends cdk.Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        functionAssociations: [
+          {
+            function: urlRewriteFunction,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
       },
       defaultRootObject: "index.html",
       errorResponses: [
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/index.html", ttl: cdk.Duration.minutes(5) },
+        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/404.html", ttl: cdk.Duration.minutes(5) },
         { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html", ttl: cdk.Duration.minutes(5) },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
