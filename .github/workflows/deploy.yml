@@ -157,8 +157,7 @@ jobs:
             echo "Associating custom domain $DOMAIN..."
             aws apprunner associate-custom-domain \
               --service-arn "$SERVICE_ARN" \
-              --domain-name "$DOMAIN" \
-              --no-enable-www-subdomain-association
+              --domain-name "$DOMAIN"
 
             echo "Waiting for custom domain details..."
             sleep 10
