@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+
 interface Scenario {
   group: string;
   name: string;
@@ -60,7 +62,7 @@ export default function PlaygroundPage() {
     setLoading(true);
     const start = Date.now();
     try {
-      const url = `/api/v1${buildPath()}`;
+      const url = `${API_BASE_URL}${buildPath()}`;
       const options: RequestInit = {
         method: selected.method,
         headers: {
@@ -143,7 +145,7 @@ export default function PlaygroundPage() {
                   <span className={`text-xs font-medium px-2 py-1 rounded ${methodColor(selected.method)}`}>
                     {selected.method}
                   </span>
-                  <code className="text-sm flex-1 text-muted-foreground">/api/v1{buildPath()}</code>
+                  <code className="text-sm flex-1 text-muted-foreground break-all">{API_BASE_URL}{buildPath()}</code>
                 </div>
               </div>
 
