@@ -50,14 +50,6 @@ function Navigation() {
             </div>
           </div>
           <div className="flex items-center gap-6">
-            <a
-              href="http://localhost:8080/swagger/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              API Docs
-            </a>
             <Link
               href="/demo/journey"
               className="hidden sm:flex h-8 items-center px-4 text-sm font-medium bg-white text-black rounded hover:bg-white/90 transition-colors"
