@@ -236,14 +236,6 @@ export default function Home() {
             >
               Start Journey Demo
             </Link>
-            <a
-              href="https://api.insurance.labs.iron-pig.com/swagger/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-12 items-center justify-center px-8 text-sm font-medium border border-border rounded hover:bg-secondary transition-colors"
-            >
-              View Swagger Docs
-            </a>
           </div>
         </div>
       </section>
